@@ -126,6 +126,28 @@ void Consumer::unassign() {
     check_error(error);
 }
 
+void Consumer::incremental_assign(const TopicPartitionList& topic_partitions) {
+    TopicPartitionsListPtr topic_list_handle = convert(topic_partitions);
+    check_error(rd_kafka_incremental_assign(get_handle(), topic_list_handle.get()));
+}
+
+void Consumer::incremental_unassign(const TopicPartitionList& topic_partitions) {
+    TopicPartitionsListPtr topic_list_handle = convert(topic_partitions);
+    check_error(rd_kafka_incremental_unassign(get_handle(), topic_list_handle.get()));
+}
+
+void Consumer::seek(const TopicPartitionList& topic_partitions, milliseconds timeout) {
+    TopicPartitionsListPtr topic_list_handle = convert(topic_partitions);
+    check_error(rd_kafka_seek_partitions(get_handle(), topic_list_handle.get(),
+                                         static_cast<int>(timeout.count())));
+    check_error(RD_KAFKA_RESP_ERR_NO_ERROR, topic_list_handle.get());
+}
+
+string Consumer::get_rebalance_protocol() const {
+    const char* protocol = rd_kafka_rebalance_protocol(get_handle());
+    return protocol ? protocol : "";
+}
+
 void Consumer::pause() {
     pause_partitions(get_assignment());
 }
@@ -349,10 +371,18 @@ void Consumer::commit(const TopicPartitionList* topic_partitions, milliseconds t
 
 void Consumer::handle_rebalance(rd_kafka_resp_err_t error,
                                 TopicPartitionList& topic_partitions) {
+    // The cooperative protocol (the cooperative-sticky assignor, or `group.protocol=consumer` of
+    // KIP-848) passes only the partitions being added or revoked and rejects rd_kafka_assign()
+    const bool cooperative = get_rebalance_protocol() == "COOPERATIVE";
     if (error == RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS) {
         CallbackInvoker<AssignmentCallback>("assignment", assignment_callback_, this)(topic_partitions);
         try {
-            assign(topic_partitions);
+            if (cooperative) {
+                incremental_assign(topic_partitions);
+            }
+            else {
+                assign(topic_partitions);
+            }
         }
         catch (const HandleException& e) {
             // rd_kafka_assign() can time out when the consumer-group
@@ -379,7 +409,12 @@ void Consumer::handle_rebalance(rd_kafka_resp_err_t error,
     else if (error == RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS) {
         CallbackInvoker<RevocationCallback>("revocation", revocation_callback_, this)(topic_partitions);
         try {
-            unassign();
+            if (cooperative) {
+                incremental_unassign(topic_partitions);
+            }
+            else {
+                unassign();
+            }
         }
         catch (const HandleException& e) {
             CallbackInvoker<RebalanceErrorCallback>(

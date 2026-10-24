@@ -195,6 +195,38 @@ public:
      * parameter
      */
     void unassign();
+
+    /**
+     * \brief Adds the topic/partitions to the current assignment
+     *
+     * This translates into a call to rd_kafka_incremental_assign
+     */
+    void incremental_assign(const TopicPartitionList& topic_partitions);
+
+    /**
+     * \brief Removes the topic/partitions from the current assignment
+     *
+     * This translates into a call to rd_kafka_incremental_unassign
+     */
+    void incremental_unassign(const TopicPartitionList& topic_partitions);
+
+    /**
+     * \brief Moves the fetch position of the topic/partitions to their offsets
+     *
+     * This translates into a call to rd_kafka_seek_partitions. The topic/partitions must be
+     * assigned and already fetching. Waits up to the timeout for the fetcher to discard the
+     * messages it has prefetched from the old position.
+     */
+    void seek(const TopicPartitionList& topic_partitions, std::chrono::milliseconds timeout);
+
+    /**
+     * \brief Gets the rebalance protocol of the consumer group
+     *
+     * This translates into a call to rd_kafka_rebalance_protocol
+     *
+     * \return "NONE", "EAGER", "COOPERATIVE", or an empty string if the consumer has no group
+     */
+    std::string get_rebalance_protocol() const;
     
     /**
      * \brief Pauses all consumption

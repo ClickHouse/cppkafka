@@ -281,6 +281,14 @@ void KafkaHandleBase::check_error(rd_kafka_resp_err_t error,
     }
 }
 
+void KafkaHandleBase::check_error(rd_kafka_error_t* error) const {
+    if (error) {
+        const rd_kafka_resp_err_t code = rd_kafka_error_code(error);
+        rd_kafka_error_destroy(error);
+        throw HandleException(code);
+    }
+}
+
 rd_kafka_conf_t* KafkaHandleBase::get_configuration_handle() {
     return config_.get_handle();
 }
